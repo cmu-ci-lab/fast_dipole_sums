@@ -1,4 +1,4 @@
-# 3D Reconstruction with Fast Dipole Sums
+# 3D reconstruction with fast dipole sums
 ## [Project website](https://imaging.cs.cmu.edu/fast_dipole_sums/)
 
 ## Datasets
