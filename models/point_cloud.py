@@ -30,8 +30,8 @@ class PointCloud(Module):
         ply_path=None,
         num_points=None,
         from_colmap=True,
-        num_sh_features=27,
-        beta=2.3,
+        num_features=32,
+        beta=2.0,
         bounding_sphere=-1,
         trained_model=False,
         optimize_normals=False,
@@ -51,7 +51,7 @@ class PointCloud(Module):
             return
 
         points, normals, areas, colors = load_point_cloud(ply_path, num_points, from_colmap, bounding_sphere, is_dtu)
-        self.init_point_cloud(points, normals, areas, colors, num_sh_features, beta, optimize_normals)
+        self.init_point_cloud(points, normals, areas, colors, num_features, beta, optimize_normals)
 
 
     def init_point_cloud(
@@ -60,7 +60,7 @@ class PointCloud(Module):
         normals,
         areas,
         colors,
-        num_sh_features,
+        num_features,
         beta,
         optimize_normals
     ):
@@ -69,12 +69,12 @@ class PointCloud(Module):
         self.points = points
         self.normals = normals
         self.areas = areas
-        self.num_sh_features = num_sh_features
+        self.num_features = num_features
         self.optimize_normals = optimize_normals
 
         self.s = torch.tensor(1.5)
 
-        self.features_point = torch.randn((self.points.shape[0], self.num_sh_features))
+        self.features_point = torch.randn((self.points.shape[0], self.num_features))
 
         if colors is not None and not self.use_color_nn:
             self.features_point = self.features_point.reshape((self.points.shape[0], 3, -1))
@@ -233,7 +233,7 @@ class PointCloud(Module):
 
         # these are necessary for backprop
         self.curr_interpolated_features = []
-        self.curr_interpolated_wns = []
+        self.curr_interpolated_ws = []
         self.curr_queries = []
 
 
@@ -380,7 +380,7 @@ class PointCloud(Module):
             'points': self.points,
             'areas': self.areas,
             'normals': self.normals,
-            'num_sh_features': self.num_sh_features,
+            'num_features': self.num_features,
             'features_point': self.features_point,
             'w_point': self.w_point
         }
@@ -395,7 +395,7 @@ class PointCloud(Module):
         self.points = parameters['points']
         self.areas = parameters['areas']
         self.normals = parameters['normals']
-        self.num_sh_features = parameters['num_sh_features']
+        self.num_features = parameters['num_features']
         self.features_point = parameters['features_point']
         self.w_point = parameters['w_point']
 
@@ -449,8 +449,8 @@ class PointCloud(Module):
 
     def forward(self, queries, is_test=False):
         mask = self.test_inside_volume(queries)[:, 0]
-        wns = torch.full((len(queries), 1), -1e10, dtype=torch.float32, device='cuda')
-        features = torch.zeros((len(queries), self.num_sh_features), dtype=torch.float32, device='cuda')
+        ws = torch.full((len(queries), 1), -1e10, dtype=torch.float32, device='cuda')
+        features = torch.zeros((len(queries), self.num_features), dtype=torch.float32, device='cuda')
 
         if mask.sum() != 0:
             queries_filtered = queries[mask == 1]
@@ -464,22 +464,23 @@ class PointCloud(Module):
             w = torch.nan_to_num(w, 0.0, 0.0, 0.0)
             f = torch.nan_to_num(f, 0.0, 0.0, 0.0)
 
-            wns[mask == 1] = w
+            ws[mask == 1] = w
             features[mask == 1] = f
 
         if not is_test:
-            wns.requires_grad = True
+            ws.requires_grad = True
             features.requires_grad = True
 
             self.curr_interpolated_features.append(features)
-            self.curr_interpolated_wns.append(wns)
+            self.curr_interpolated_ws.append(ws)
             self.curr_queries.append(queries)
 
+        # some random trick to prevent the scale from blowing up
         s = 6 * self.s / (3 + self.s)
         if self.activation == 'erf':
-            interpolated_occupancies = 0.5 + 0.5 * torch.erf((wns - 1/2) * torch.exp(s) * INV_SQRT_2)
+            interpolated_occupancies = 0.5 + 0.5 * torch.erf((ws - 1/2) * torch.exp(s) * INV_SQRT_2)
         elif self.activation == 'logistic':
-            interpolated_occupancies = torch.sigmoid(torch.exp(s) * (wns - 1/2))
+            interpolated_occupancies = torch.sigmoid(torch.exp(s) * (ws - 1/2))
 
         return features, interpolated_occupancies
 
@@ -495,7 +496,7 @@ class PointCloud(Module):
         if len(self.curr_queries) == 0:
             return
 
-        interpolated_wns_grad = torch.concat([x.grad for x in self.curr_interpolated_wns], dim=0)
+        interpolated_ws_grad = torch.concat([x.grad for x in self.curr_interpolated_ws], dim=0)
         interpolated_features_grad = torch.concat([x.grad for x in self.curr_interpolated_features], dim=0)
         queries = torch.concat(self.curr_queries, dim=0)
 
@@ -505,7 +506,7 @@ class PointCloud(Module):
             return
 
         queries_filtered = queries[mask == 1]
-        interpolated_wns_grad = interpolated_wns_grad[mask == 1]
+        interpolated_ws_grad = interpolated_ws_grad[mask == 1]
         interpolated_features_grad = interpolated_features_grad[mask == 1]
 
         dw_point, dn_point, dinv_delta_w =\
@@ -513,7 +514,7 @@ class PointCloud(Module):
                                self.centers, self.child_nodes, self.pi_flat, self.pi_lengths,
                                self.pi_starts, self.ni_flat, self.ni_lengths, self.ni_starts,
                                self.radii, self.wpos_point, self.wan_point, self.wan_node,
-                               interpolated_wns_grad, self.beta, self.inv_delta_w, 1024)
+                               interpolated_ws_grad, self.beta, self.inv_delta_w, 1024)
         df_point, dinv_delta_f =\
             ap.interp_backward(self.points, self.areas, queries_filtered,self.centers,
                                self.child_nodes, self.pi_flat, self.pi_lengths,self.pi_starts,
@@ -536,12 +537,12 @@ class PointCloud(Module):
                 # don't want to manually compute this
                 self.normalized_normals.backward(dn_point, retain_graph=True)
 
-        self.curr_interpolated_wns = []
+        self.curr_interpolated_ws = []
         self.curr_interpolated_features = []
         self.curr_queries = []
 
 
-    def sdf_gradients(self, queries):
+    def dip_sum_gradients(self, queries):
         gradients = torch.zeros((len(queries), 3), dtype=torch.float32, device='cuda')
         mask = self.test_inside_volume(queries)[:, 0]
 
@@ -560,18 +561,18 @@ class PointCloud(Module):
         return gradients
 
 
-    def sdf_normals(self, queries):
-        gradients = self.sdf_gradients(queries)
+    def dip_sum_normals(self, queries):
+        gradients = self.dip_sum_gradients(queries)
         normals = -gradients / (torch.norm(gradients, dim=-1, keepdim=True) + 1e-8)
         return normals
 
 
-    def sdf(self, queries):
+    def dip_sum(self, queries):
         mask = self.test_inside_volume(queries)[:, 0]
-        wns = torch.full((len(queries), 1), -1e10, dtype=torch.float32, device='cuda')
+        ws = torch.full((len(queries), 1), -1e10, dtype=torch.float32, device='cuda')
 
         if mask.sum() == 0:
-            return wns
+            return ws
 
         queries_filtered = queries[mask == 1]
 
@@ -580,9 +581,18 @@ class PointCloud(Module):
                               self.wan_point, self.wan_node, self.beta, self.inv_delta_w, 1024)
         w = torch.nan_to_num(w, 0.0, 0.0, 0.0)
 
-        wns[mask == 1] = w
+        ws[mask == 1] = w
 
-        return wns - 1/2
+        return ws
+    
+
+    # not actually an sdf, called this for compatibility
+    def sdf(self, queries):
+        return self.dip_sum(queries) - 1/2
+    
+
+    def sdf_normals(self, queries):
+        return self.dip_sum_normals(queries)
 
 
     def occupancy(self, queries):
