@@ -25,8 +25,8 @@ def recover_P(intrinsics, pose):
 def convert(colmap_dir, out_dir):
     data_out = dict()
 
-    # changes these so that scene is centered at origin
-    # preferably with a unit bounding box
+    # changes these manually so that scene is centered at origin
+    # preferably bounded within a unit sphere
     scale = 1.0
     dx = 0.0
     dy = 0.0
@@ -89,8 +89,8 @@ def convert(colmap_dir, out_dir):
 
 
 def main():
-    colmap_dir = './point_cloud_data/bmvs/camera'
-    out_dir = './point_cloud_data/bmvs/camera_test'
+    colmap_dir = ''  # path to COLMAP reconstruction, should contain 'dense' folder
+    out_dir = ''  # output path to write images, camera parameters, and point cloud
     convert(colmap_dir, out_dir)
 
 
