@@ -11,8 +11,6 @@ The following DTU and Blended MVS datasets can be readily ingested by our traini
 
 * Blended MVS Dataset ([train & eval data](https://fast-dipole-sums-data.s3.us-east-2.amazonaws.com/public/bmvs_data.zip), [point clouds](https://fast-dipole-sums-data.s3.us-east-2.amazonaws.com/public/bmvs_pcd.zip))
 
-To work with other datasets, organize your data as shown below and refer to the [Colmap tutorial](https://colmap.github.io/tutorial.html#dense-reconstruction) on reconstructing a dense initial point cloud.
-
 ### Data Convention
 The data is organized as follows:
 
@@ -39,6 +37,22 @@ point_cloud_data
 
 Here the `cameras_sphere.npz` follows the data format in [IDR](https://github.com/lioryariv/idr/blob/main/DATA_CONVENTION.md), where `world_mat_xx` denotes the world to image projection matrix, and `scale_mat_xx` denotes the normalization matrix.
 
+### Custom Data
+
+To work with other datasets or custom scenes, refer to the [COLMAP tutorial](https://colmap.github.io/tutorial.html#dense-reconstruction) on estimating camera parameters and reconstructing a dense initial point cloud. After obtaining a dense COLMAP reconstruction, run `misc/process_custom_data.py` with appropriate paths to convert camera parameters from the COLMAP reconstruction into IDR format. Resulting files will placed in the same output directory.
+
+For optimal results, ensure that the scene is centered at the origin and tightly bounded within a unit sphere. If that is not the case, we recommend taking the following steps: 
+1. import the dense point cloud into third-party software (e.g., Blender).
+2. add a unit sphere into the scene; scale and translate the sphere to tightly bound the scene.
+3. set the corresponding variables in `misc/process_custom_data.py` to the scaling and translation parameters of the sphere.
+
+For training on a single custom scene, replace the `data_dir` and `ply_path` fields in `confs/custom.conf` with paths from the previous step and run the following command: 
+```shell
+python exp_runner.py \
+  --conf ./confs/custom.conf \
+  --mode train
+```
+
 ## Usage
 
 ### Setup
@@ -54,21 +68,21 @@ bash build_cuda_extensions.sh
 <details>
   <summary> Dependencies (click to expand) </summary>
 
-* joblib==1.3.2
-* matplotlib==3.8.2
-* numpy==2.1.1
-* open3d==0.18.0
-* opencv_python==4.9.0.80
-* pandas==2.2.2
-* point_cloud_utils==0.30.4
-* pyhocon==0.3.60
-* PyMCubes==0.1.4
-* pyntcloud==0.3.1
-* scikit_learn==1.4.0
-* scipy==1.14.1
+* joblib
+* matplotlib
+* numpy==1.26.4
+* open3d
+* opencv_python
+* pandas
+* point_cloud_utils
+* pyhocon
+* PyMCubes
+* pyntcloud
+* scikit_learn
+* scipy
 * torch==2.2.0
-* tqdm==4.66.1
-* trimesh==4.1.3
+* tqdm
+* trimesh
 
 </details>
 
