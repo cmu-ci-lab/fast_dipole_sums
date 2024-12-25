@@ -1,6 +1,12 @@
 # 3D reconstruction with fast dipole sums
 ## [Project website](https://imaging.cs.cmu.edu/fast_dipole_sums/)
 
+<p align="center">
+  <img src="static/teaser.png"/>
+</p>
+
+We introduce a method for high-quality 3D reconstruction from multi-view images. Our method uses a new point-based representation, the regularized dipole sum, which generalizes the winding number to allow for interpolation of per-point attributes in point clouds. We additionally derive Barnes-Hut fast summation schemes for accelerated dipole sum queries that facilitate the use of ray tracing to efficiently and differentiably render images. Compared to state-of-the-art alternatives, our method significantly improves 3D reconstruction quality and robustness at equal runtimes, while also supporting more general rendering methods such as shadow rays for direct illumination.
+
 ## Datasets
 
 ### Data Preparation
